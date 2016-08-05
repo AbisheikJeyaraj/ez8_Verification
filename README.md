@@ -1,1 +1,2 @@
-# ez8_Verification
+# EZ8 : Verification of easy 8-bit processor
+
