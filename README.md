@@ -1,2 +1,2 @@
-# EZ8 : Verification of easy 8-bit processor
+# EZ8 : Verification of a Program Counter in 8-bit processor
 
