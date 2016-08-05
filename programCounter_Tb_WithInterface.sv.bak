@@ -1,0 +1,120 @@
+ // Program Counter Test bench
+module programCounter_ctrl_Testbench;
+
+	//Instantiate interface
+	programCounterInterface pcInterface();
+
+	//Instantiate program counter control through interface
+	programCounter_Ctrl pcc(.pcInterfaceForPcCtrl(pcInterface));
+
+	//Instantiate instruction memory through interface
+	instructionMem insmem(.pcInterfaceForInstructionFetch(pcInterface));
+
+	// For counter
+	event reset_enable;
+	event terminate_sim;
+	event resume_counter_event;
+
+	// For instruction fetch	
+	event instruction_fetch_event;
+
+	// For interrupt
+	event interrupt_enable_event;
+
+	// Initial block for initialization
+	initial begin
+ 		$display ("###################################################");
+ 		pcInterface.clk = 0;
+ 		pcInterface.reset = 0;
+ 		pcInterface.pause = 0;
+ 		pcInterface.counter_error = 0;
+		pcInterface.instFetch_error = 0;
+
+		$readmemh("memfile.dat",pcInterface.RAM); // Read memory from dat file and store in the reg
+
+		#3000 pcInterface.pcCheckerFunction; //  trigger checker event after 3000ns
+	end
+
+	// Always block to generate clock
+	always
+  		#50 pcInterface.clk = !pcInterface.clk;
+
+
+	/* DUT 
+	   ~~~
+		a) Reset 
+		b) Interrupt
+		c) Counter
+	*/
+
+	// Reset
+	initial forever begin
+		@ (reset_enable);
+			@ (negedge pcInterface.clk)
+				$display ("Applying reset at time %d",$time);
+				pcInterface.reset = 1;
+			@ (negedge pcInterface.clk)
+				pcInterface.reset = 0;
+			-> resume_counter_event;
+		end
+
+	// Interrupt
+	initial forever begin
+		@ (interrupt_enable_event);
+			@ (negedge pcInterface.clk)
+				$display ("Applying interrupt at time %d",$time);
+				pcInterface.interrupt = 1;
+			@ (negedge pcInterface.clk)
+				pcInterface.interrupt = 0;
+			-> resume_counter_event;
+		end
+
+	// Counter
+	initial begin
+		#10 -> reset_enable;
+		#200 -> interrupt_enable_event;
+		#1000 -> reset_enable;
+		@ (resume_counter_event);
+			@ (negedge pcInterface.clk);
+				pcInterface.reset = 0;
+	end
+
+	// Behavioral model for counter
+	always @ (posedge pcInterface.clk) begin
+		if (pcInterface.reset == 1'b1) 
+			pcInterface.behavioral_count_output <= 0; // 0 when reset
+		else if (pcInterface.interrupt_save == 1'b1) begin
+			pcInterface.behavioral_count_output <= 12'd4;  // when interrupt occurs o/p set to 4
+			pcInterface.interrupt_save <= 1'b0;  // make interrupt_save to 0
+		end
+		else if (pcInterface.interrupt_wait == 1'b1) begin
+			pcInterface.interrupt_wait <= 1'b0;  // interrupt_wait to 0
+			pcInterface.interrupt_save <= 1'b1;  // make interrupt_save to 1
+		end
+		else if ( pcInterface.reset == 1'b0) begin
+			if (pcInterface.interrupt == 1'b1)
+				pcInterface.interrupt_wait <= 1; // make interrupt_wait to 1
+			else
+				pcInterface.behavioral_count_output <= pcInterface.behavioral_count_output + 1; // add + 1 for counter
+		end
+		#5 -> instruction_fetch_event;  // Trigger this event to fetch the instruction
+	end
+
+	// Behavioral model for instruction fetch
+	initial forever begin 
+		@ (instruction_fetch_event); 
+			pcInterface.behavioral_fetchInstruction_output <= pcInterface.RAM[pcInterface.behavioral_count_output]; // Based on the memAddress i/p instruction should be fetched from the RAM
+	end
+
+	// value to push in queue
+	always @ (negedge pcInterface.clk) begin
+		pcInterface.behavioralCounterOutput.push_back( pcInterface.behavioral_count_output );
+		pcInterface.dutCounterOutput.push_back( pcInterface.pc_out );
+
+		pcInterface.behavioralInstructionFetchOutput.push_back( pcInterface.behavioral_fetchInstruction_output );
+		pcInterface.dutInstructionFetchOutput.push_back( pcInterface.dut_fetchInstruction_output );
+	end
+
+	
+
+endmodule
